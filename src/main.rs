@@ -5,10 +5,10 @@
 use cortex_m_rt::entry;
 
 // Device
-use hx711::Hx711;
+use hx711_spi::Hx711;
 use rtt_target::{rprintln, rtt_init_print};
 use stm32h7xx_hal::nb::block;
-use stm32h7xx_hal::{delay::Delay, pac, prelude::*};
+use stm32h7xx_hal::{delay::Delay, pac, prelude::*, spi};
 
 // panic handler
 use panic_halt as _;
@@ -35,48 +35,33 @@ fn main() -> ! {
     let cp = cortex_m::Peripherals::take().unwrap();
     let dp = pac::Peripherals::take().unwrap();
 
-    rprintln!("Peripherals taken, setting up PWR ...");
+    // create an SPI interface with PA0 &  as SCLK & MOSI, respectively
+
     let pwr = dp.PWR.constrain();
     let pwrcfg = example_power!(pwr).freeze();
 
-    rprintln!("Setup RCC...");
     let rcc = dp.RCC.constrain();
     let ccdr = rcc.sys_ck(100.MHz()).freeze(pwrcfg, &dp.SYSCFG);
 
     let gpioa = dp.GPIOA.split(ccdr.peripheral.GPIOA);
 
-    // Configure the hx711 load cell driver:
-    //
-    // | HX  | dout   -> PA1 | STM |
-    // | 711 | pd_sck <- PA0 | 32  |
-    //
+    let sck = gpioa.pa1.into_alternate();
+    let mosi = gpioa.pa0.into_alternate();
+    //let ss = gpioa.pa4.into_push_pull_output();
 
-    let clocks = ccdr.clocks;
+    let spi = dp.SPI1.spi(
+        (sck, mosi),
+        spi::MODE_0,
+        1.MHz(),
+        ccdr.peripheral.SPI1,
+        &ccdr.clocks,
+    );
 
-    let dout = gpioa.pa1.into_floating_input().into_pull_down_input();
-    let pd_sck = gpioa.pa0.into_push_pull_output();
-    let mut hx711 = Hx711::new(Delay::new(cp.SYST, clocks), dout, pd_sck).unwrap();
-
-    const N: i32 = 8;
-    let mut val: i32 = 0;
-
-    // Obtain the tara value | 2270771
-    for _ in 0..N {
-        val += block!(hx711.retrieve()).unwrap();
-    }
-    let tara = val / N;
-
-    rprintln!("Tare: {}", tara);
+    let mut hx711 = Hx711::new(spi);
 
     loop {
-        // Measurement loop
-        val = 0;
-        for _ in 0..N {
-            val += block!(hx711.retrieve()).unwrap();
-        }
-        let weight = val / N;
-        rprintln!("Weight: {}", weight);
-        // delay
-        cortex_m::asm::delay(100_000_000);
+        // get data from hx711
+        let data = block!(hx711.read()).unwrap();
+        rprintln!("Data: {}", data);
     }
 }
