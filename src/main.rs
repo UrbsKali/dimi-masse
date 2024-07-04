@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 
+use cortex_m::delay;
 // Core
 use cortex_m_rt::entry;
 
@@ -13,55 +14,62 @@ use stm32h7xx_hal::{delay::Delay, pac, prelude::*, spi};
 // panic handler
 use panic_halt as _;
 
-macro_rules! example_power {
-    ($pwr:ident) => {{
-        cfg_if::cfg_if! {
-            if #[cfg(all(feature = "smps", feature = "example-smps"))] {
-                $pwr.smps()
-            } else if #[cfg(all(feature = "smps", feature = "example-ldo"))] {
-                $pwr.ldo()
-            } else {
-                $pwr
-            }
-        }
-    }};
-}
-
 #[entry]
 fn main() -> ! {
     rtt_init_print!();
     rprintln!("Starting ...");
 
+    // On prend les périphériques
     let cp = cortex_m::Peripherals::take().unwrap();
     let dp = pac::Peripherals::take().unwrap();
 
-    // create an SPI interface with PA0 &  as SCLK & MOSI, respectively
-
+    // On configure l'alimentation de la carte (PWR)
+    // VOS0 (1.4V) est le mode de consommation le plus haut, qui permet d'atteindre la plus haut fréquence de fonctionnement
+    // cf Notion pour plus d'infos
+    // SYSFG : System Configuration Controller
     let pwr = dp.PWR.constrain();
-    let pwrcfg = example_power!(pwr).freeze();
+    let pwrcfg = pwr.vos0(&dp.SYSCFG).freeze();
 
+    // On configure les clocks du microcontrôleur
+    // RCC : Reset and Clock Control
+    // PLL : Phase Locked Loop
+    // sys_ck : fréquence du système
+    // pclk1 : fréquence du bus 1 (Périphériques)
     let rcc = dp.RCC.constrain();
-    let ccdr = rcc.sys_ck(100.MHz()).freeze(pwrcfg, &dp.SYSCFG);
+    let ccdr = rcc
+        .sys_ck(96.MHz())
+        .pclk1(48.MHz())
+        .freeze(pwrcfg, &dp.SYSCFG);
 
-    let gpioa = dp.GPIOA.split(ccdr.peripheral.GPIOA);
+    // On récupère les clocks créés par le système, qui ne sont pas
+    // forcement les mêmes que celles demandées
+    let clocks = ccdr.clocks;
 
-    let sck = gpioa.pa1.into_alternate();
-    let mosi = gpioa.pa0.into_alternate();
-    //let ss = gpioa.pa4.into_push_pull_output();
+    // On récupère les périphériques GPIO
+    let gpioc = dp.GPIOC.split(ccdr.peripheral.GPIOC);
 
-    let spi = dp.SPI1.spi(
-        (sck, mosi),
+    let sck = gpioc.pc10.into_alternate();
+    let miso = gpioc.pc11.into_alternate();
+    //let mosi = gpioc.pc12.into_alternate(); // Pas besoin de MOSI pour le HX711
+
+    // On configure le SPI
+    let mut spi = dp.SPI3.spi(
+        (sck, miso, spi::NoMosi),
         spi::MODE_0,
-        1.MHz(),
-        ccdr.peripheral.SPI1,
-        &ccdr.clocks,
+        3.MHz(),
+        ccdr.peripheral.SPI3,
+        &clocks,
     );
 
     let mut hx711 = Hx711::new(spi);
+
+    let mut delay = Delay::new(cp.SYST, clocks);
 
     loop {
         // get data from hx711
         let data = block!(hx711.read()).unwrap();
         rprintln!("Data: {}", data);
+        // wait 1s
+        delay.delay_ms(1000_u32);
     }
 }
