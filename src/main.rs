@@ -78,13 +78,25 @@ fn main() -> ! {
     rprintln!("Init done!");
 
     let mut delay = Delay::new(cp.SYST, ccdr.clocks);
+    let N = 8;
+    let mut tare = 0;
+
+    for _ in 0..N {
+        tare += block!(hx711.read()).unwrap();
+        delay.delay_ms(100_u16);
+    }
+    tare = tare / N;
+    rprintln!("Tare: {}", tare);
 
     loop {
         // get data from hx711
-        let data = block!(hx711.read()).unwrap();
+        let mut data = 0;
+        for _ in 0..N {
+            data += block!(hx711.read()).unwrap();
+        }
+        data = data / N;
+        data -= tare;
         rprintln!("Data: {}", data);
-        // wait 1s
-        delay.delay_ms(1000_u32);
     }
 }
 
