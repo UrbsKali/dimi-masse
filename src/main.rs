@@ -9,7 +9,7 @@ use core::panic::PanicInfo;
 use cortex_m_rt::entry;
 
 // Device
-use hx711_spi::Hx711;
+use hx711::Hx711;
 use rtt_target::{rprintln, rtt_init_print};
 use stm32h7xx_hal::nb::block;
 use stm32h7xx_hal::{delay::Delay, pac, prelude::*, spi};
@@ -44,7 +44,7 @@ fn main() -> ! {
         .sys_ck(200.MHz()) // Implies pll1_p_ck
         // For non-integer values, round up. `freeze` will never
         // configure a clock faster than that specified.
-        .pll1_q_ck(33_333_334.Hz())
+        .pll1_q_ck(1.MHz())
         .freeze(pwrcfg, &dp.SYSCFG);
 
     // On récupère les clocks créés par le système, qui ne sont pas
@@ -55,34 +55,23 @@ fn main() -> ! {
     // On récupère les périphériques GPIO
     let gpioc = dp.GPIOC.split(ccdr.peripheral.GPIOC);
 
-    let sck = gpioc.pc10.into_alternate();
-    let miso = gpioc.pc11.into_alternate();
+    let sck = gpioc.pc10.into_floating_input();
+    let miso = gpioc.pc11.into_push_pull_output();
     //let mosi = gpioc.pc12.into_alternate(); // Pas besoin de MOSI pour le HX711
 
     rprintln!("GPIO configured!");
 
-    // On configure le SPI
-    let mut spi: spi::Spi<_, _, u8> = dp.SPI3.spi(
-        (sck, miso, spi::NoMosi),
-        spi::MODE_1,
-        1.MHz(),
-        ccdr.peripheral.SPI3,
-        &ccdr.clocks,
-    );
-    rprintln!("SPI configured!");
+    let mut delay = Delay::new(cp.SYST, ccdr.clocks);
 
-    let mut hx711 = Hx711::new(spi);
-    hx711.reset().unwrap();
-    hx711.set_mode(hx711_spi::Mode::ChAGain128).unwrap(); // x128 works up to +-20mV
+    let mut hx711 = Hx711::new(delay, sck, miso).unwrap();
 
     rprintln!("Init done!");
 
-    let mut delay = Delay::new(cp.SYST, ccdr.clocks);
     let N = 8;
     let mut tare = 0;
 
     for _ in 0..N {
-        tare += block!(hx711.read()).unwrap();
+        tare += block!(hx711.retrieve()).unwrap();
         delay.delay_ms(100_u16);
     }
     tare = tare / N;
@@ -92,7 +81,7 @@ fn main() -> ! {
         // get data from hx711
         let mut data = 0;
         for _ in 0..N {
-            data += block!(hx711.read()).unwrap();
+            data += block!(hx711.retrieve()).unwrap();
         }
         data = data / N;
         data -= tare;
