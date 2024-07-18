@@ -44,7 +44,7 @@ fn main() -> ! {
         .sys_ck(200.MHz()) // Implies pll1_p_ck
         // For non-integer values, round up. `freeze` will never
         // configure a clock faster than that specified.
-        .pll1_q_ck(1.MHz())
+        .pll1_q_ck(10.MHz())
         .freeze(pwrcfg, &dp.SYSCFG);
 
     // On récupère les clocks créés par le système, qui ne sont pas
@@ -55,24 +55,16 @@ fn main() -> ! {
     // On récupère les périphériques GPIO
     let gpioc = dp.GPIOC.split(ccdr.peripheral.GPIOC);
 
-    let sck = gpioc.pc10.into_floating_input();
-    let miso = gpioc.pc11.into_push_pull_output();
-    //let mosi = gpioc.pc12.into_alternate(); // Pas besoin de MOSI pour le HX711
-
-    rprintln!("GPIO configured!");
-
-    let mut delay = Delay::new(cp.SYST, ccdr.clocks);
-
-    let mut hx711 = Hx711::new(delay, sck, miso).unwrap();
+    let dout = gpioc.pc11.into_floating_input().into_pull_down_input();
+    let pd_sck = gpioc.pc10.into_push_pull_output();
+    let mut hx711 = Hx711::new(Delay::new(cp.SYST, ccdr.clocks), dout, pd_sck).unwrap();
 
     rprintln!("Init done!");
-
-    let N = 8;
+    let N = 4;
     let mut tare = 0;
 
     for _ in 0..N {
         tare += block!(hx711.retrieve()).unwrap();
-        delay.delay_ms(100_u16);
     }
     tare = tare / N;
     rprintln!("Tare: {}", tare);
