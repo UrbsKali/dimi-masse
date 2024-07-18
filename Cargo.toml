@@ -13,3 +13,4 @@ rtt-target = "0.5.0"
 stm32h7xx-hal = { version = "^0.16.0", features = ["stm32h735"] }
 cfg-if = "1.0.0"
 hx711 = "0.6.0"
+

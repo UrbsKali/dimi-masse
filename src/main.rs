@@ -58,11 +58,7 @@ fn main() -> ! {
     let dout = gpioc.pc11.into_floating_input().into_pull_down_input();
     let pd_sck = gpioc.pc10.into_push_pull_output();
     let mut hx711 = Hx711::new(Delay::new(cp.SYST, ccdr.clocks), dout, pd_sck).unwrap();
-    /*
-        let mut hx711 = Hx711::new(spi);
-        hx711.reset().unwrap();
-        hx711.set_mode(hx711_spi::Mode::ChAGain128).unwrap(); // x128 works up to +-20mV
-    */
+
     rprintln!("Init done!");
     let N = 4;
     let mut tare = 0;
